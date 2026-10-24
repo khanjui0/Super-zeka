@@ -111,7 +111,8 @@ public class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(pad, pad, pad, pad);
+        // Extra bottom room keeps the last items clear of the navigation bar.
+        root.setPadding(pad, pad, pad, pad + dp(72));
         scroll.addView(root);
 
         countText = new TextView(this);
@@ -193,12 +194,7 @@ public class MainActivity extends Activity {
         statusText.setGravity(Gravity.CENTER);
         root.addView(statusText);
 
-        preview = new ImageView(this);
-        preview.setAdjustViewBounds(true);
-        preview.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        preview.setPadding(0, dp(8), 0, dp(8));
-        root.addView(preview, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
+        // Save/share sit above the preview so they stay reachable right after creating a collage.
         LinearLayout outRow = row();
         saveBtn = button("Galeriye Kaydet");
         saveBtn.setOnClickListener(v -> saveResult());
@@ -207,6 +203,12 @@ public class MainActivity extends Activity {
         outRow.addView(saveBtn, weight());
         outRow.addView(shareBtn, weight());
         root.addView(outRow);
+
+        preview = new ImageView(this);
+        preview.setAdjustViewBounds(true);
+        preview.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        preview.setPadding(0, dp(8), 0, dp(8));
+        root.addView(preview, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         setContentView(scroll);
         updateCount();

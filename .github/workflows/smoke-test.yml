@@ -44,7 +44,7 @@ jobs:
           disable-animations: true
           script: |
             adb install -r app/build/outputs/apk/release/app-release.apk
-            adb logcat -c
+            adb logcat -c || true
             adb shell am start -W -n com.superzeka.kolaj/.MainActivity
             sleep 8
             adb logcat -d -s AndroidRuntime:E ActivityManager:* | tail -60

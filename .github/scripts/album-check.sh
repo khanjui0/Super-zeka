@@ -14,7 +14,7 @@ else
   adb shell pm grant com.superzeka.kolaj android.permission.READ_EXTERNAL_STORAGE
 fi
 adb shell uiautomator dump /sdcard/ui.xml > /dev/null
-bounds=$(adb shell cat /sdcard/ui.xml | tr '>' '\n' | grep 'text="Galeri Albümü Ekle"' | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '[0-9]+')
+bounds=$(adb shell cat /sdcard/ui.xml | tr '>' '\n' | grep -iE 'text="[^"]*alb' | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '[0-9]+')
 set -- $bounds
 adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
 sleep 4

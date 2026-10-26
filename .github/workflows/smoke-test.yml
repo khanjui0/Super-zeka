@@ -53,6 +53,7 @@ jobs:
             adb shell uiautomator dump /sdcard/ui.xml
             adb shell cat /sdcard/ui.xml | tr '>' '\n' | grep -oE 'text="[^"]*"|resource-id="android:id/(action_bar|content)"|bounds="[^"]*"' | paste - - | head -12
             adb exec-out screencap -p > screen-${{ matrix.api-level }}.png
+            sh .github/scripts/album-check.sh
 
       - uses: actions/upload-artifact@v4
         if: always()

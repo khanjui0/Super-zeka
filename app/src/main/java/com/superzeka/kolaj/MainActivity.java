@@ -2,8 +2,10 @@ package com.superzeka.kolaj;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ContentResolver;
+import android.content.ContentUris;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -37,6 +39,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -48,6 +51,10 @@ public class MainActivity extends Activity {
     private static final int REQ_PICK = 1;
     private static final int REQ_FOLDER = 2;
     private static final int REQ_WRITE_PERM = 3;
+    private static final int REQ_READ_PERM = 4;
+
+    // Android 14+ lets people grant access to only some photos.
+    private static final String READ_MEDIA_VISUAL_USER_SELECTED = "android.permission.READ_MEDIA_VISUAL_USER_SELECTED";
 
     private static final String[] RATIO_LABELS = {"Kare 1:1", "Dikey 4:5", "Dikey 9:16 (Story)", "Yatay 16:9", "Yatay 4:3", "A4 Dikey"};
     private static final float[] RATIOS = {1f, 4f / 5f, 9f / 16f, 16f / 9f, 4f / 3f, 1f / 1.4142f};
@@ -122,7 +129,7 @@ public class MainActivity extends Activity {
 
         TextView hint = new TextView(this);
         hint.setText("Seçim sınırı yok: istediğin kadar fotoğraf seç, tekrar tekrar ekleyebilirsin. "
-                + "Bir klasörün tamamını da tek seferde ekleyebilirsin. "
+                + "Bir galeri albümünü ya da klasörün tamamını da tek seferde ekleyebilirsin. "
                 + "Galeriden 'Paylaş' ile de bu uygulamaya gönderebilirsin.");
         hint.setPadding(0, dp(4), 0, dp(8));
         root.addView(hint);
@@ -135,6 +142,10 @@ public class MainActivity extends Activity {
         pickRow.addView(pickBtn, weight());
         pickRow.addView(folderBtn, weight());
         root.addView(pickRow);
+
+        Button albumBtn = button("Galeri Albümü Ekle");
+        albumBtn.setOnClickListener(v -> pickAlbum());
+        root.addView(albumBtn);
 
         Button clearBtn = button("Seçimi Temizle");
         clearBtn.setOnClickListener(v -> {
@@ -251,6 +262,102 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             toast("Klasör seçici bulunamadı");
         }
+    }
+
+    private void pickAlbum() {
+        if (busy) return;
+        String[] perms = readPermissions();
+        for (String p : perms) {
+            if (checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED) {
+                loadAlbums();
+                return;
+            }
+        }
+        requestPermissions(perms, REQ_READ_PERM);
+    }
+
+    private String[] readPermissions() {
+        if (Build.VERSION.SDK_INT >= 34) {
+            return new String[]{Manifest.permission.READ_MEDIA_IMAGES, READ_MEDIA_VISUAL_USER_SELECTED};
+        } else if (Build.VERSION.SDK_INT >= 33) {
+            return new String[]{Manifest.permission.READ_MEDIA_IMAGES};
+        }
+        return new String[]{Manifest.permission.READ_EXTERNAL_STORAGE};
+    }
+
+    private static final class Album {
+        final String name;
+        final List<Uri> uris = new ArrayList<>();
+
+        Album(String name) {
+            this.name = name;
+        }
+    }
+
+    /** Groups every image in MediaStore by its gallery album (bucket), newest first. */
+    private void loadAlbums() {
+        statusText.setText("Albümler yükleniyor...");
+        executor.execute(() -> {
+            LinkedHashMap<String, Album> albums = new LinkedHashMap<>();
+            Album all = new Album("Tüm fotoğraflar");
+            String[] cols = {MediaStore.Images.Media._ID, MediaStore.Images.Media.BUCKET_ID, MediaStore.Images.Media.BUCKET_DISPLAY_NAME};
+            try (Cursor c = getContentResolver().query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cols, null, null,
+                    MediaStore.Images.Media.DATE_ADDED + " DESC")) {
+                if (c != null) {
+                    while (c.moveToNext()) {
+                        Uri uri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, c.getLong(0));
+                        String bucket = c.getString(1);
+                        String name = c.getString(2);
+                        if (bucket == null) bucket = "";
+                        if (name == null || name.isEmpty()) name = "Diğer";
+                        Album a = albums.get(bucket);
+                        if (a == null) {
+                            a = new Album(name);
+                            albums.put(bucket, a);
+                        }
+                        a.uris.add(uri);
+                        all.uris.add(uri);
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+            List<Album> list = new ArrayList<>();
+            list.add(all);
+            list.addAll(albums.values());
+            main.post(() -> {
+                statusText.setText("");
+                showAlbumDialog(list);
+            });
+        });
+    }
+
+    private void showAlbumDialog(List<Album> list) {
+        if (list.get(0).uris.isEmpty()) {
+            toast("Galeride fotoğraf bulunamadı");
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 34
+                && checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED) {
+            toast("Sadece erişim izni verdiğin fotoğraflar görünüyor");
+        }
+        String[] labels = new String[list.size()];
+        for (int i = 0; i < list.size(); i++) {
+            labels[i] = list.get(i).name + " (" + list.get(i).uris.size() + ")";
+        }
+        boolean[] checked = new boolean[list.size()];
+        new AlertDialog.Builder(this)
+                .setTitle("Albüm seç")
+                .setMultiChoiceItems(labels, checked, (d, which, isChecked) -> checked[which] = isChecked)
+                .setPositiveButton("Ekle", (d, w) -> {
+                    int before = selected.size();
+                    for (int i = 0; i < list.size(); i++) {
+                        if (checked[i]) selected.addAll(list.get(i).uris);
+                    }
+                    toast((selected.size() - before) + " fotoğraf eklendi");
+                    updateCount();
+                })
+                .setNegativeButton("İptal", null)
+                .show();
     }
 
     @Override
@@ -402,7 +509,15 @@ public class MainActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == REQ_WRITE_PERM) {
+        if (requestCode == REQ_READ_PERM) {
+            for (int r : grantResults) {
+                if (r == PackageManager.PERMISSION_GRANTED) {
+                    loadAlbums();
+                    return;
+                }
+            }
+            toast("Albümleri görmek için fotoğraflara erişim izni gerekli");
+        } else if (requestCode == REQ_WRITE_PERM) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 saveAsync(null);
             } else {
